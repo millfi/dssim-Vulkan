@@ -151,8 +151,8 @@ impl<M> GammaPixel for GrayAlpha<M> where M: Copy + Clone + Into<f32> + GammaCom
     type Output = RGBAPLU;
 
     fn to_linear(&self, gamma_lut: &M::Lut) -> RGBAPLU {
-        let a_unit = self.1.into() / M::max_value() as f32;
-        let g = self.0.to_linear(gamma_lut);
+        let a_unit = self.value().into() / M::max_value() as f32;
+        let g = self.value().to_linear(gamma_lut);
         RGBAPLU {
             r: g * a_unit,
             g: g * a_unit,
@@ -178,7 +178,7 @@ impl<M> GammaPixel for Gray<M> where M: Copy + GammaComponent {
 
     #[inline(always)]
     fn to_linear(&self, gamma_lut: &M::Lut) -> RGBAPLU {
-        let g = self.0.to_linear(gamma_lut);
+        let g = self.value().to_linear(gamma_lut);
         RGBAPLU { r: g, g, b: g, a: 1.0 }
     }
 }

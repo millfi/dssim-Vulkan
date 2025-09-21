@@ -19,11 +19,11 @@ crate-type = ["lib", "staticlib"]
 [dependencies]
 imgref = "1.11.0"
 itertools = "0.14"
-rayon = { version = "1.10.0", optional = true }
-rgb = "0.8.50"
+rayon = { version = "1.11.0", optional = true }
+rgb = "0.8.52"
 
 [dev-dependencies]
-lodepng = "3.10.2"
+lodepng = "3.12.1"
 
 [features]
 default = ["threads"]
