@@ -12,3 +12,5 @@
 .\tests\raw1k_lossless-cut.mp4	.\tests\nv5_hevc_vbr_6000_lossless-encode-cut.mp4
 .\tests\raw1k_62frames.mp4	.\tests\nv5_h264_vbr_9000_cutted.mp4
 .\tests\raw1k_lossless-cut.mp4	.\tests\nv5_av1_vbr_7000_cutted.mp4
+.\tests\crop-repro\cropped.mp4	.\tests\crop-repro\visible.mp4
+.\tests\crop-repro\right-bottom.mp4	.\tests\crop-repro\right-bottom-visible.mp4
