@@ -11,33 +11,32 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Check local tool prerequisites before downloading/building dependencies.
-if (-not (Test-Path -LiteralPath (Join-Path $MsysRoot 'usr\bin\bash.exe')) -and
-    -not (Test-Path -LiteralPath 'C:\msys64\usr\bin\bash.exe')) {
-    throw 'MSYS2 is required (make and diffutils). Install it or pass -MsysRoot <directory>.'
-}
-
 # Update this together with the matching ffmpeg-next dependency in
 # src_reference/Cargo.toml. 8.1.2 is the latest stable release as of 2026-07-10.
 $Version = '8.1.2'
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$ThirdPartyRoot = Join-Path $RepositoryRoot 'third_party'
+$FfmpegArchive = Join-Path $ThirdPartyRoot "ffmpeg-$Version.tar.xz"
+$FfmpegDownloadUri = "https://ffmpeg.org/releases/ffmpeg-$Version.tar.xz"
 $UpstreamRoot = Join-Path $RepositoryRoot "third_party\ffmpeg-$Version"
 $VariantName = $Variant.ToLowerInvariant()
 $BuildRoot = Join-Path $RepositoryRoot "third_party\ffmpeg-build\$VariantName"
 $SourceRoot = Join-Path $BuildRoot "source"
 $Prefix = Join-Path $RepositoryRoot "third_party\ffmpeg-$VariantName-shared"
-if (-not (Test-Path -LiteralPath (Join-Path $UpstreamRoot 'configure'))) {
-    throw "Vendored FFmpeg source is missing: $UpstreamRoot"
-}
-if ((Get-Content -LiteralPath (Join-Path $UpstreamRoot 'libavcodec\vulkan_av1.c') -Raw).Contains('VK_DRIVER_ID_AMD_PROPRIETARY ?')) {
-    throw 'The vendored upstream source must remain unpatched; only the GPU working copy may be patched.'
-}
 $ZlibVersion = '1.3.1'
 $ZlibSourceRoot = Join-Path $BuildRoot "zlib-$ZlibVersion"
 $ZlibBuildRoot = Join-Path $BuildRoot "zlib-$ZlibVersion-build"
 $ZlibPrefix = Join-Path $BuildRoot "zlib-$ZlibVersion-prefix"
 $VcpkgTriplet = 'x64-windows'
 $RepositoryVcpkgRoot = Join-Path $RepositoryRoot 'third_party\vcpkg'
+
+function Get-RequiredCommand([string]$Name, [string]$Hint) {
+    $command = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue
+    if ($null -eq $command) {
+        throw "'$Name' was not found. $Hint"
+    }
+    return $command.Source
+}
 
 function Test-VcpkgRoot([string]$Root) {
     return -not [string]::IsNullOrWhiteSpace($Root) -and
@@ -115,6 +114,54 @@ function Test-FfmpegVcpkgDependencies([string]$Root, [string]$Triplet) {
         (@($pkgconf).Count -gt 0)
 }
 
+# Check local tool prerequisites before downloading/building dependencies.
+$BashPath = $null
+foreach ($root in @($MsysRoot, 'C:\msys64')) {
+    $candidate = Join-Path $root 'usr\bin\bash.exe'
+    if (Test-Path -LiteralPath $candidate) {
+        $BashPath = $candidate
+        break
+    }
+}
+if ($null -eq $BashPath) {
+    throw 'MSYS2 was not found. Install it from https://www.msys2.org/, run "pacman -S --needed make diffutils" in an MSYS2 shell, then rerun this script; or pass -MsysRoot <path-to-msys64>.'
+}
+$TarPath = Get-RequiredCommand 'tar.exe' 'Install bsdtar or use the tar.exe bundled with Windows.'
+Get-RequiredCommand 'cmake.exe' 'Install CMake and make sure cmake.exe is on PATH.' | Out-Null
+
+$VsDevShell = @(
+    'C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\Launch-VsDevShell.ps1',
+    'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\Launch-VsDevShell.ps1',
+    'C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\Launch-VsDevShell.ps1'
+) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if ($null -eq (Get-Command 'cl.exe' -CommandType Application -ErrorAction SilentlyContinue)) {
+    if ([string]::IsNullOrWhiteSpace($VsDevShell)) {
+        throw 'cl.exe is not on PATH and a Visual Studio Developer PowerShell launcher was not found. Install the Visual Studio C++ build tools for x64.'
+    }
+    . $VsDevShell -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+}
+foreach ($tool in @('cl.exe', 'link.exe', 'lib.exe')) {
+    Get-RequiredCommand $tool 'Install Visual Studio C++ build tools for x64.' | Out-Null
+}
+
+if ($Variant -eq 'Gpu' -and [string]::IsNullOrWhiteSpace($env:VULKAN_SDK)) {
+    throw 'VULKAN_SDK is not set. Install the Vulkan SDK and open a shell where VULKAN_SDK points to its installation directory.'
+}
+$VulkanIncludeRoot = $null
+if ($Variant -eq 'Gpu') {
+    $VulkanIncludeRoot = Join-Path $env:VULKAN_SDK 'Include'
+    if (-not (Test-Path -LiteralPath $VulkanIncludeRoot -PathType Container)) {
+        throw "Vulkan SDK headers were not found at $VulkanIncludeRoot. Install the Vulkan SDK or correct VULKAN_SDK."
+    }
+}
+$MsysToolPrelude = 'export PATH=/usr/bin:/bin:$PATH; '
+foreach ($MsysCommand in @('make', 'cmp')) {
+    & $BashPath --noprofile --norc -lc "${MsysToolPrelude}command -v $MsysCommand >/dev/null"
+    if ($LASTEXITCODE -ne 0) {
+        throw "'$MsysCommand' was not found in MSYS2. Open an MSYS2 shell and install the FFmpeg build tools with: pacman -S --needed make diffutils"
+    }
+}
+
 $VcpkgRoot = Get-VcpkgRoot $VcpkgRoot $RepositoryVcpkgRoot
 $VcpkgExecutable = Join-Path $VcpkgRoot 'vcpkg.exe'
 $VcpkgInstallArguments = @(
@@ -166,14 +213,6 @@ if ($null -eq $VcpkgPkgConf) {
     throw 'pkgconf is required to detect vcpkg libdav1d/libjxl. Install pkgconf:x64-windows first.'
 }
 
-function Get-RequiredCommand([string]$Name, [string]$Hint) {
-    $command = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue
-    if ($null -eq $command) {
-        throw "'$Name' was not found. $Hint"
-    }
-    return $command.Source
-}
-
 function ConvertTo-BashPath([string]$Path) {
     $fullPath = [System.IO.Path]::GetFullPath($Path)
     if ($fullPath -notmatch '^([A-Za-z]):\\(.*)$') {
@@ -182,41 +221,43 @@ function ConvertTo-BashPath([string]$Path) {
     return '/' + $Matches[1].ToLowerInvariant() + '/' + ($Matches[2] -replace '\\', '/')
 }
 
-$VsDevShell = @(
-    'C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\Launch-VsDevShell.ps1',
-    'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\Launch-VsDevShell.ps1',
-    'C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\Launch-VsDevShell.ps1'
-) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-if ($null -eq (Get-Command 'cl.exe' -CommandType Application -ErrorAction SilentlyContinue)) {
-    if ([string]::IsNullOrWhiteSpace($VsDevShell)) {
-        throw 'cl.exe is not on PATH and a Visual Studio Developer PowerShell launcher was not found.'
-    }
-    . $VsDevShell -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
-}
-foreach ($tool in @('cl.exe', 'link.exe', 'lib.exe')) {
-    Get-RequiredCommand $tool 'Install Visual Studio C++ build tools for x64.' | Out-Null
-}
-
-$BashPath = $null
-foreach ($root in @($MsysRoot, 'C:\msys64')) {
-    $candidate = Join-Path $root 'usr\bin\bash.exe'
-    if (Test-Path -LiteralPath $candidate) {
-        $BashPath = $candidate
-        break
-    }
-}
-if ($null -eq $BashPath) {
-    throw "MSYS2 bash.exe was not found. Install MSYS2 or pass -MsysRoot <path-to-msys64>."
-}
-Get-RequiredCommand 'tar.exe' 'Install bsdtar or use the tar.exe bundled with Windows.' | Out-Null
 $VcpkgPkgConfBashPath = ConvertTo-BashPath $VcpkgPkgConf
 $VcpkgPkgConfigWindowsPath = $VcpkgPkgConfig -replace '\\', '/'
 $MsysPrelude = "export PATH=/usr/bin:/bin:`$PATH; export PKG_CONFIG='$VcpkgPkgConfBashPath'; export PKG_CONFIG_PATH='$VcpkgPkgConfigWindowsPath'; "
-foreach ($MsysCommand in @('make', 'cmp')) {
-    & $BashPath --noprofile --norc -lc "${MsysPrelude}command -v $MsysCommand >/dev/null"
-    if ($LASTEXITCODE -ne 0) {
-        throw "'$MsysCommand' was not found in MSYS2. Install the FFmpeg build tools with: pacman -S --needed make diffutils"
+
+# Prefer a local release archive so an offline build does not need to contact
+# ffmpeg.org. If it is not present, cache the official release in third_party
+# before extracting it as the pristine upstream source tree.
+New-Item -ItemType Directory -Force -Path $ThirdPartyRoot | Out-Null
+if (-not (Test-Path -LiteralPath $UpstreamRoot -PathType Container)) {
+    if (Test-Path -LiteralPath $UpstreamRoot) {
+        throw "The FFmpeg source path exists but is not a directory: $UpstreamRoot"
     }
+
+    if (-not (Test-Path -LiteralPath $FfmpegArchive -PathType Leaf)) {
+        Write-Host "FFmpeg $Version archive was not found locally; downloading from $FfmpegDownloadUri"
+        try {
+            Invoke-WebRequest -UseBasicParsing -Uri $FfmpegDownloadUri -OutFile $FfmpegArchive
+        } catch {
+            Remove-Item -LiteralPath $FfmpegArchive -Force -ErrorAction SilentlyContinue
+            throw "Unable to download FFmpeg $Version from $FfmpegDownloadUri. $($_.Exception.Message)"
+        }
+    } else {
+        Write-Host "Using local FFmpeg archive: $FfmpegArchive"
+    }
+
+    Write-Host "Extracting FFmpeg $Version into $ThirdPartyRoot"
+    & $TarPath -xJf $FfmpegArchive -C $ThirdPartyRoot
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to extract the FFmpeg archive: $FfmpegArchive"
+    }
+}
+
+if (-not (Test-Path -LiteralPath (Join-Path $UpstreamRoot 'configure') -PathType Leaf)) {
+    throw "FFmpeg source is missing or incomplete: $UpstreamRoot"
+}
+if ((Get-Content -LiteralPath (Join-Path $UpstreamRoot 'libavcodec\vulkan_av1.c') -Raw).Contains('VK_DRIVER_ID_AMD_PROPRIETARY ?')) {
+    throw 'The vendored upstream source must remain unpatched; only the GPU working copy may be patched.'
 }
 
 # Both variants build private working copies; never modify the vendored source.
@@ -317,7 +358,7 @@ $ZlibLibBashPath = ConvertTo-BashPath (Join-Path $ZlibPrefix 'lib')
 $VcpkgIncludeBashPath = ConvertTo-BashPath $VcpkgInclude
 $VcpkgLibBashPath = ConvertTo-BashPath $VcpkgLib
 $HardwareArguments = if ($Variant -eq 'Gpu') {
-    $VulkanIncludeBashPath = ConvertTo-BashPath (Join-Path $env:VULKAN_SDK 'Include')
+    $VulkanIncludeBashPath = ConvertTo-BashPath $VulkanIncludeRoot
     @('--enable-vulkan', '--disable-d3d11va',
       '--enable-hwaccel=h264_vulkan,hevc_vulkan,av1_vulkan,vp9_vulkan',
       "--extra-cflags=-I$VulkanIncludeBashPath")
