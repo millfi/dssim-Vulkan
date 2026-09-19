@@ -96,10 +96,11 @@ The reference score algorithm and FFmpeg source are unchanged.
   repository's default C++20 settings. MSBuild required execution outside the
   filesystem sandbox because its FileTracker initialization was denied there.
 - Fixed `tests/test_pairs.txt` GPU benchmark: all 16 pairs completed, exit 0.
-- `verify.ps1`: all 20 successful crop/identity runs passed, each with 5 frames
+- `verify.ps1`: all 25 successful crop/identity runs passed, each with 5 frames
   and printed DSSIM `0.00000000`; visible dimension mismatch was rejected.
-  Cases cover the original left/top and right/bottom fixtures and reproducibly
-  generated four-edge crops in NV12 and P010, both input orders, and depths 1/3.
+  Cases cover the original left/top and right/bottom fixtures, reproducibly
+  generated four-edge crops in NV12 and P010, and the generated padded-1088
+  case, in both input orders and at depths 1/3.
   Software framemd5 results match; CSV header, row count, numbering, finite
   scores, and depth agreement are checked mechanically. Nine-decimal CSV scores
   match each corresponding same-input baseline exactly (some normal DSSIM

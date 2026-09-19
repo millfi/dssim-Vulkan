@@ -102,7 +102,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(feature = "video")]
         {
             if files.len() != 2 || !files.iter().all(dssim::is_video_path) {
-                return Err("Video comparison requires exactly two MP4/MOV/MKV/WebM files".into());
+                return Err("Video comparison requires exactly two MP4/M4V/MOV/MKV/WebM files".into());
             }
             if map_output_file.is_some() {
                 return Err("-o SSIM maps are not supported for video comparison".into());

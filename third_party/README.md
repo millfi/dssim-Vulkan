@@ -1,9 +1,11 @@
 # FFmpeg sources and builds
 
-`ffmpeg-8.1.2/` is the unmodified upstream release source, vendored as ordinary
-files (including its licenses), not a binary distribution or a nested Git checkout.
+`ffmpeg-8.1.2.tar.xz` is the tracked, unmodified upstream release archive
+(including its licenses), not a binary distribution or a nested Git checkout.
 Source: https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz
 Release archive SHA-256: `464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c`.
+The build script expands it into a pristine `ffmpeg-8.1.2/` source tree when
+needed; that expanded tree remains unmodified.
 
 `tools/build_ffmpeg_minimal.ps1 -Variant Gpu` copies this source into
 `ffmpeg-build/gpu/source`, applies the AMD AV1 tile-unit compatibility patch there,

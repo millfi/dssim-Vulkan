@@ -124,7 +124,7 @@ function tokenize(input: string): Token[] {
       continue;
     }
 
-    const newline = /^\r\n|\n/.exec(rest);
+    const newline = /^(?:\r\n|\n)/.exec(rest);
     if (newline) {
       emit("NEWLINE", newline[0]);
       advance(newline[0]);

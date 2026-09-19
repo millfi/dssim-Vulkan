@@ -8,7 +8,13 @@ DSSIM画像類似度評価アルゴリズムをC++20とVulkanで実装した高�
   - Vulkan 1.3
   - `VK_EXT_shader_object`
   - `VK_KHR_push_descriptor`
-  - Vulkan 1.3の`synchronization2`および`dynamicRendering`機能
+  - Vulkan 1.2の`timelineSemaphore`と、Vulkan 1.3の`synchronization2`および
+    `dynamicRendering`機能
+  - compute制限: `maxComputeWorkGroupInvocations >= 256`、
+    `maxComputeWorkGroupSize[0] >= 16`、`maxComputeWorkGroupSize[1] >= 16`、
+    `maxComputeSharedMemorySize >= 6400` bytes、
+    `maxPerStageDescriptorStorageBuffers >= 8`
+  - `maxPushDescriptors >= 8`
 - Vulkan loaderライブラリとヘッダー、および`glslc`を含むVulkan SDK
 - PowerShell
 - CMake 3.24以降
@@ -42,8 +48,8 @@ or
 & cmake --build build --config Release --target dssim_vulkan
 ```
 
-`third_party/ffmpeg-8.1.2` に未改変の上流ソースを配置しています。
-`build_gpu.ps1` は GPU 専用の作業コピーに AMD AV1 パッチを適用し、Vulkan Video を
+`third_party/ffmpeg-8.1.2.tar.xz` に未改変の上流FFmpegソースを同梱しています。
+`build_gpu.ps1` は必要時にこれを展開し、GPU専用の作業コピーにのみAMD AV1パッチを適用して、Vulkan Video を
 有効にした DLL を `third_party/ffmpeg-gpu-shared` にビルドします。
 上記の CMake 手動ビルド前には `& .\tools\build_ffmpeg_minimal.ps1 -Variant Gpu` を実行してください。
 
@@ -145,7 +151,8 @@ Vulkan Video queue familyを表示します。可能なら2本を別々の対応
 ## 固定の複数ペアベンチマーク
 
 実行可能なベンチマークリストとして `tests/test_pairs.txt` を使用します。
-空行以外の各行には、タブ区切りで2つの画像パスを記述します。
+空行以外の各行には、タブ区切りで2つの入力パスを記述します。現在のリストには
+10個のPNGペアと6個の動画ペアがあります。
 
 ベンチマークは次の固定コマンドで実行します。
 
@@ -156,32 +163,33 @@ Get-Content .\tests\test_pairs.txt |
 
 `--stdin-pairs` ではVulkan instanceとdeviceを作成し、SPIR-Vを読み込んで
 shader objectをプロセス内で一度だけ作成し、すべてのペアで再利用します。
-画像解像度はpush constantsとディスパッチ数で指定されるため、解像度が
-異なってもshader objectを作り直す必要はありません。
+画像ペアの解像度はpush constantsとディスパッチ数で指定されるため、解像度が
+異なってもshader objectを作り直す必要はありません。動画ペアも動画比較用pipelineを
+使用しつつ同じsessionを再利用します。
 
 `--stdin-pairs` は `--out`、`--csv`、`--pipeline-depth`、
 `--debug-dump-dir` と同時には使えません。
 
 ## 自動テスト
 
-テストスクリプト`check_regression.ps1`は、Vulkan版のスコアをPATH上から解決したオリジナルの
-`dssim.exe` と比較します。
+テストスクリプト`check_regression.ps1`は`build_reference.ps1`でローカルreferenceを更新し、
+Vulkan版のスコアを`src_reference\target\release\dssim.exe`と比較します。
 
 ```powershell
 & .\tools\check_regression.ps1
 ```
 
-実際に選択された参照実行ファイルは次のコマンドで確認できます。
+スクリプトが使用する参照実行ファイルは次のコマンドで確認できます。
 
 ```powershell
-(Get-Command dssim.exe -CommandType Application).Source
+Get-Item .\src_reference\target\release\dssim.exe
 ```
 
 テストスクリプトは次の処理を行います。
 
 - `tests/test_pairs.txt` の全ペアを読み込む
 - Vulkan版を1つの `--stdin-pairs` セッションで実行する
-- 各ペアについてオリジナルの `dssim.exe` を実行する
+- 各ペアについてローカルreference実行ファイルを実行する
 - 同一画像比較では `0.00000000` を要求する
 - その他の比較では相対誤差1%未満を要求する
 - 結果を表形式で表示し、違反があれば非ゼロで終了する
@@ -210,9 +218,14 @@ query結果は、選択したcompute queueが対応している場合にのみ�
 - `session_init_gpu_timestamp_ms`: セッション単位のVulkan timestamp query時間
 - `session_init_cpu_postprocess_ms`: セッション単位のCPU後処理
 - `session_init_other_ms`: 上記以外のセッション初期化
+- `session_init_total_ms`: 計測対象のsession pipeline-setupとresource-preparation
+  bucketの合計。Vulkan instance/device作成は含みません
 
 各比較:
 
+- `total_ms`: 比較可能な入力が揃ってから最終スコアまでのwall-clock時間。
+  `video_total_ms`はこの区間をデコード済みframe pairごとに合計した値であり、
+  動画全体の経過時間ではありません
 - `pipeline_setup_ms`: 比較単位のシェーダー準備
 - `resource_prep_ms`: バッファ作成、アップロード、resource binding準備
 - `gpu_submit_wait_ms`: コマンド記録、サブミット、readback待機のCPU wall時間
@@ -238,12 +251,14 @@ query結果は、選択したcompute queueが対応している場合にのみ�
 - `post_process_base_scale_ms`
 - `post_process_remaining_scales_ms`
 - `post_process_ms`
+- `other_ms`
 
 `dispatch_and_submit_ms` はCPU側のコマンド構築・送信時間であり、
 純粋なシェーダー実行時間ではありません。`readback_ms` にはGPU完了待ちと
 host readback時間が含まれます。CPUとGPUは非同期に重なるため、
 `gpu_timestamp_ms` はwall-clock時間区分の合計には含まれません。
-2つのscale別post-process項目も、並列集計時には互いに重なる独立時間です。
+CPU後処理は逐次実行され、`post_process_base_scale_ms`を先に計測してから、
+`post_process_remaining_scales_ms`を計測します。
 JSONのfield名は互換性のため維持しています。shader objectを使うため、
 `create_pso_ms`と`create_bind_group_ms`は0になる想定です。shader objectと
 pipeline layoutの処理は、対応する既存bucketへ計上します。timestamp queryは
@@ -261,7 +276,7 @@ pipeline layoutの処理は、対応する既存bucketへ計上します。times
   画像ピラミッドを構築する
 - デバッグ経路では中間scaleデータを保持・出力できるよう、CPUで並列に画素変換と
   画像ピラミッド生成を行う
-- 通常実行ではSSIMマップだけをreadbackする
+- 通常実行ではSSIMマップではなく、各scaleの縮約済みsumとabsolute-deviation値だけをreadbackする
 
 ## 実装の制約
 
@@ -290,5 +305,7 @@ configureが明確なエラーで終了します。PowerShellからシェーダ�
 - `lab_preprocess.comp`
 - `stage0_absdiff.comp`
 - `stage0_score.comp`
+- `reduce_sum.comp`
+- `reduce_abs_deviation.comp`
 
 オリジナルのdssimアルゴリズムと比較しながら実装するため、オリジナルの実装のソースコードを `src_reference/` に残しています。

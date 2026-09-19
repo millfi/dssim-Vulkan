@@ -1,7 +1,8 @@
 # Dependency timeline result
 
 `gradation-256.timeline.txt` follows
-`../Specification/dependency-timeline.ebnf`. Its durations were measured with:
+`../Specification/dependency-timeline.ebnf`. Its bucket durations were captured
+with:
 
 ```powershell
 & .\build\src_gpu\Release\dssim-Vulkan.exe `
@@ -11,22 +12,26 @@
     --profiling
 ```
 
-`gradation-256.timeline.svg` renders the measured dependencies and highlights
-two overlaps:
+`gradation-256.timeline.svg` renders the captured durations with the current
+dependency topology and highlights the GPU/CPU overlap:
 
 - Vulkan timestamp-query execution overlaps CPU-side submit/readback waiting.
-- Scale 1-4 CPU aggregation runs on a worker while scale 0 is aggregated on
-  the main thread.
+
+CPU-side aggregation is sequential: the comparison processes scale 0 first,
+then processes scales 1-4 in order on the same CPU execution path. The
+postprocess spans in the timeline preserve that order. The numeric bucket
+durations are retained from the original capture and are not a current
+performance benchmark.
 
 The timestamp-query duration is exact, but this profiler does not calibrate the
 GPU timestamp clock against the CPU clock. Its horizontal placement inside the
-submit/wait window is therefore schematic. CPU wall-clock spans and all
-displayed durations are the measured values.
+submit/wait window is therefore schematic. Other displayed durations are the
+values retained from the original capture.
 
 Validate the timeline source with the bundled parser:
 
 ```powershell
 & node --experimental-strip-types `
-    .\src_gpu\profiling\dependency_timeline\Test-program\runnner.ts `
-    .\src_gpu\profiling\dependency_timeline\Results\gradation-256.timeline.txt
+    .\tools\profiling\dependency_timeline\Test-program\runnner.ts `
+    .\tools\profiling\dependency_timeline\Results\gradation-256.timeline.txt
 ```

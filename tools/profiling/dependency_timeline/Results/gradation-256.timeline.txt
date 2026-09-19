@@ -1,18 +1,19 @@
 # Measured with:
 # dssim-Vulkan tests/gradation.png tests/gradation-256.png --out build/dependency_timeline_profile.json --profiling
-# CPU wall spans are sequential on the first line.
-begin_0 <-------------------------> end_0 -> begin_1 <------------------------> end_1 -> begin_2 <-----------> end_2 -> begin_3 <-------> end_3 -> begin_4 <-----> end_4 -> begin_5 <--> end_5
+# Bucket durations are retained from the original capture and are not a current
+# performance benchmark. The ordering below reflects current sequential CPU aggregation.
+# CPU wall spans are sequential on the first line. CPU aggregation processes
+# scale 0 before scales 1-4 on one CPU execution path.
+begin_0 <-------------------------> end_0 -> begin_1 <------------------------> end_1 -> begin_2 <-----------> end_2 -> begin_3 <-------> end_3 -> begin_4 <-----> end_4 -> begin_5 <--> end_5 -> begin_6 <--> end_6
 # Timestamp Query executes asynchronously within the combined command-submit/readback wall interval.
 # Its absolute placement against the CPU clock is schematic because this profiler records duration without CPU/GPU clock calibration.
-begin_1-end_1 -> begin_6 <---------> end_6 -> begin_4-end_4
-# Scale 1-4 aggregation runs on a worker concurrently with scale 0 aggregation.
-begin_3-end_3 -> begin_7 <--> end_7
+begin_2-end_2 -> begin_7 <---------> end_7 -> begin_4-end_4
 
 begin_0-end_0 := create_buffers = 93000 microseconds
 begin_1-end_1 := upload_inputs = 5000 microseconds
 begin_2-end_2 := command_encode_submit = 3000 microseconds
 begin_3-end_3 := readback_map_wait = 15000 microseconds
 begin_4-end_4 := postprocess_base_scale = 8287 microseconds
-begin_5-end_5 := uncategorized_wall = 1000 microseconds
-begin_6-end_6 := gpu_timestamp_query = 10146 microseconds
-begin_7-end_7 := postprocess_remaining_scales = 2799 microseconds
+begin_5-end_5 := postprocess_remaining_scales = 2799 microseconds
+begin_6-end_6 := uncategorized_wall = 1000 microseconds
+begin_7-end_7 := gpu_timestamp_query = 10146 microseconds

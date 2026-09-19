@@ -44,10 +44,9 @@
     <text x="1030" y="382" text-anchor="middle" class="tick">140</text>
   </g>
 
-  <!-- Known overlap windows. GPU placement inside submit/wait is schematic. -->
+  <!-- GPU placement inside submit/wait is schematic. -->
   <rect x="778" y="82" width="108" height="145" rx="5" fill="#eeca3b" opacity="0.10"/>
   <text x="832" y="94" text-anchor="middle" class="tick">CPU submit/wait ↔ GPU overlap</text>
-  <rect x="886" y="252" width="17" height="103" rx="4" fill="#54a24b" opacity="0.13"/>
 
   <text x="24" y="130" class="lane">CPU wall-clock (MECE)</text>
   <rect x="190" y="105" width="558" height="42" rx="4" fill="#4c78a8"/>
@@ -64,30 +63,33 @@
   <text x="841" y="125" text-anchor="middle" class="bar-label">readback</text>
   <text x="841" y="140" text-anchor="middle" class="bar-label">15 ms</text>
 
-  <rect x="886" y="105" width="48" height="42" rx="4" fill="#54a24b"/>
-  <text x="910" y="125" text-anchor="middle" class="bar-label">post</text>
-  <text x="910" y="140" text-anchor="middle" class="bar-label">8 ms</text>
+  <rect x="886" y="105" width="49.7" height="42" rx="4" fill="#54a24b"/>
+  <text x="910.85" y="125" text-anchor="middle" class="bar-label">scale 0</text>
+  <text x="910.85" y="140" text-anchor="middle" class="bar-label">8.287 ms</text>
 
-  <rect x="934" y="105" width="6" height="42" rx="3" fill="#b279a2"/>
-  <text x="950" y="164" text-anchor="middle" class="duration">other 1 ms</text>
+  <rect x="935.7" y="105" width="16.8" height="42" rx="4" fill="#9d755d"/>
+  <text x="960" y="126" class="duration">scales 1–4</text>
+  <text x="960" y="141" class="duration">2.799 ms</text>
+
+  <rect x="952.5" y="105" width="6" height="42" rx="3" fill="#b279a2"/>
+  <text x="970" y="164" text-anchor="middle" class="duration">other 1 ms</text>
 
   <text x="24" y="215" class="lane">GPU Timestamp Query</text>
   <rect x="802" y="180" width="60.9" height="42" rx="4" fill="url(#gpuHatch)" stroke="#b58d00" stroke-dasharray="4 3"/>
   <text x="832.5" y="200" text-anchor="middle" class="bar-label">GPU execution</text>
   <text x="832.5" y="215" text-anchor="middle" class="bar-label">10.146 ms</text>
   <path d="M 778 147 L 778 169 L 802 169 L 802 180" class="dependency"/>
-  <path d="M 862.9 222 L 862.9 242 L 886 242 L 886 252" class="dependency"/>
+  <path d="M 862.9 222 L 862.9 242 L 886 242 L 886 262" class="dependency"/>
   <text x="872" y="233" class="tick">rejoin before postprocess</text>
 
-  <text x="24" y="290" class="lane">CPU postprocess: main</text>
+  <text x="24" y="290" class="lane">CPU postprocess (sequential)</text>
   <rect x="886" y="262" width="49.7" height="34" rx="4" fill="#54a24b"/>
   <text x="911" y="283" text-anchor="middle" class="bar-label">scale 0</text>
-  <text x="942" y="283" class="duration">8.287 ms</text>
+  <rect x="935.7" y="262" width="16.8" height="34" rx="4" fill="#9d755d"/>
+  <text x="960" y="283" class="duration">scales 1–4 · 2.799 ms</text>
 
-  <text x="24" y="345" class="lane">CPU postprocess: worker</text>
-  <rect x="886" y="317" width="16.8" height="34" rx="4" fill="#9d755d"/>
-  <text x="910" y="340" class="duration">scales 1–4 · 2.799 ms</text>
-  <path d="M 886 296 L 876 306 L 886 317" class="dependency"/>
-
-  <text x="24" y="406" class="subtitle">Solid CPU bars use wall-clock buckets. Hatched Vulkan GPU duration is exact; horizontal placement is schematic because this profiler does not calibrate GPU and CPU clocks.</text>
+  <text x="24" y="402" class="subtitle">
+    <tspan x="24" dy="0">Solid CPU bars use wall-clock buckets; the postprocess spans are contiguous.</tspan>
+    <tspan x="24" dy="16">Hatched Vulkan GPU duration is exact, but its horizontal placement is schematic because this profiler does not calibrate GPU and CPU clocks.</tspan>
+  </text>
 </svg>

@@ -11,7 +11,13 @@ This is an accelerated implementation of the DSSIM image similarity evaluation a
   - Vulkan 1.3
   - `VK_EXT_shader_object`
   - `VK_KHR_push_descriptor`
-  - Vulkan 1.3 `synchronization2` and `dynamicRendering` features
+  - Vulkan 1.2 `timelineSemaphore` and Vulkan 1.3 `synchronization2` and
+    `dynamicRendering` features
+  - Compute limits: `maxComputeWorkGroupInvocations >= 256`,
+    `maxComputeWorkGroupSize[0] >= 16`, `maxComputeWorkGroupSize[1] >= 16`,
+    `maxComputeSharedMemorySize >= 6400` bytes, and
+    `maxPerStageDescriptorStorageBuffers >= 8`
+  - `maxPushDescriptors >= 8`
 - Vulkan SDK including the Vulkan loader library and headers, and `glslc`
 - PowerShell
 - CMake 3.24 or later
@@ -43,7 +49,7 @@ or
 ```
 
 
-`build_gpu.ps1` builds FFmpeg from the unmodified upstream source vendored in `third_party/ffmpeg-8.1.2`. It applies the AMD AV1 Vulkan Video compatibility patch only to a private GPU source copy, enables Vulkan Video, and installs DLLs in `third_party/ffmpeg-gpu-shared`. For the manual CMake commands above, first run `& .\tools\build_ffmpeg_minimal.ps1 -Variant Gpu`.
+`third_party/ffmpeg-8.1.2.tar.xz` contains the unmodified upstream FFmpeg source. `build_gpu.ps1` expands it when needed, applies the AMD AV1 Vulkan Video compatibility patch only to a private GPU source copy, enables Vulkan Video, and installs DLLs in `third_party/ffmpeg-gpu-shared`. For the manual CMake commands above, first run `& .\tools\build_ffmpeg_minimal.ps1 -Variant Gpu`.
 
 Build the reference with `& .\tools\build_reference.ps1`. Its separate, unpatched D3D11VA build installs DLLs in `third_party/ffmpeg-reference-shared` and disables Vulkan. Both variants use dynamic linking and place their own DLLs beside their executable, so they do not depend on a shared FFmpeg `PATH`. Binary ZIP distributions are no longer used. Building FFmpeg requires Visual Studio x64 C++ tools, MSYS2 make/diffutils, and the Vulkan SDK for the GPU variant; vcpkg supplies libdav1d/libjxl/pkgconf.
 
@@ -143,7 +149,7 @@ Each of the two videos is processed by its dedicated FFmpeg decode thread and pa
 ## Fixed multi-pair benchmark
 
 
-Use `tests/test_pairs.txt` as a runnable benchmark list. Each line, excluding empty lines, describes two image paths separated by a tab.
+Use `tests/test_pairs.txt` as a runnable benchmark list. Each nonempty line describes two input paths separated by a tab. The current list contains 10 PNG pairs and 6 video pairs.
 
 
 Benchmarks are run with the following fixed command:
@@ -155,7 +161,7 @@ Get-Content .\tests\test_pairs.txt |
 ```
 
 
-With `--stdin-pairs`, a Vulkan instance and device are created, SPIR-V is loaded, and shader objects are created once within the process and reused for all pairs. Because image resolutions are specified by push constants and dispatch counts, there is no need to recreate shader objects even if resolutions differ.
+With `--stdin-pairs`, a Vulkan instance and device are created, SPIR-V is loaded, and shader objects are created once within the process and reused for all pairs. For image pairs, dimensions are specified by push constants and dispatch counts, so shader objects do not need to be recreated when resolutions differ. Video pairs likewise reuse the session while using their video comparison pipeline.
 
 
 `--stdin-pairs` cannot be used simultaneously with `--out`, `--csv`, `--pipeline-depth`, or `--debug-dump-dir`.
@@ -163,23 +169,23 @@ With `--stdin-pairs`, a Vulkan instance and device are created, SPIR-V is loaded
 
 ## Automated Testing
 
-The test script `check_regression.ps1` compares the Vulkan version scores against the original `dssim.exe` resolved from the PATH.
+The test script `check_regression.ps1` refreshes the local reference with `build_reference.ps1` and compares Vulkan scores against `src_reference\target\release\dssim.exe`.
 
 ```powershell
 & .\tools\check_regression.ps1
 ```
 
-You can verify the reference executable actually selected using the following command:
+You can verify the reference executable used by the script with the following command:
 
 ```powershell
-(Get-Command dssim.exe -CommandType Application).Source
+Get-Item .\src_reference\target\release\dssim.exe
 ```
 
 The test script performs the following process:
 
 - Reads all pairs in `tests/test_pairs.txt`
 - Runs the Vulkan version in a single `--stdin-pairs` session
-- Runs the original `dssim.exe` for each pair
+- Runs the local reference executable for each pair
 - Requires `0.00000000` for identical image comparisons
 - Requires a relative error of less than 1% for all other comparisons
 - Displays results in a tabular format and exits with a non-zero code if there are any violations
@@ -206,9 +212,14 @@ Session initialization:
 - `session_init_gpu_timestamp_ms`: Vulkan timestamp query time per session
 - `session_init_cpu_postprocess_ms`: Session-level CPU post-processing
 - `session_init_other_ms`: Session initialization other than the above
+- `session_init_total_ms`: Sum of the measured session pipeline-setup and
+  resource-preparation buckets; it does not include Vulkan instance/device creation
 
 Each comparison:
 
+- `total_ms`: Wall-clock time from comparison-ready inputs to the final score;
+  `video_total_ms` is the sum of this interval across decoded frame pairs, not
+  the whole video's elapsed time
 - `pipeline_setup_ms`: Shader preparation per comparison
 - `resource_prep_ms`: Buffer creation, uploading, and resource binding preparation
 - `gpu_submit_wait_ms`: CPU wall time for command recording, submission, and readback waiting
@@ -232,8 +243,9 @@ Using `--out <json>` outputs the following detailed items to the `profiling` obj
 - `post_process_base_scale_ms`
 - `post_process_remaining_scales_ms`
 - `post_process_ms`
+- `other_ms`
 
-`dispatch_and_submit_ms` is the CPU-side command construction and submission time, not the pure shader execution time. `readback_ms` includes GPU completion waiting and host readback time. Because the CPU and GPU overlap asynchronously, `gpu_timestamp_ms` is not included in the sum of wall-clock time intervals. The two scale-specific post-process items are also independent times that overlap with each other during parallel aggregation. JSON field names are maintained for compatibility. Since shader objects are used, `create_pso_ms` and `create_bind_group_ms` are expected to be 0. Shader object and pipeline layout processing are accounted for in the corresponding existing buckets. Timestamp queries are an optional feature; comparison processing and wall-clock profiling will work even if the queue does not support them.
+`dispatch_and_submit_ms` is the CPU-side command construction and submission time, not the pure shader execution time. `readback_ms` includes GPU completion waiting and host readback time. Because the CPU and GPU overlap asynchronously, `gpu_timestamp_ms` is not included in the sum of wall-clock time intervals. CPU post-processing is sequential: `post_process_base_scale_ms` is measured first, followed by `post_process_remaining_scales_ms`. JSON field names are maintained for compatibility. Since shader objects are used, `create_pso_ms` and `create_bind_group_ms` are expected to be 0. Shader object and pipeline layout processing are accounted for in the corresponding existing buckets. Timestamp queries are an optional feature; comparison processing and wall-clock profiling will work even if the queue does not support them.
 
 ## Current Optimization Design
 
@@ -244,7 +256,7 @@ Using `--out <json>` outputs the following detailed items to the `profiling` obj
 - A 256-element lookup table is used for sRGB-to-linear conversion
 - In the normal path, two inputs are converted on the GPU, and image pyramids for all scales are built without any intermediate round-trip to the CPU
 - In the debug path, pixel conversion and image pyramid generation are performed in parallel on the CPU so that intermediate scale data can be retained and output
-- Normal execution reads back only the SSIM map
+- Normal execution reads back only the reduced sum and absolute-deviation values for each scale, not SSIM maps
 
 ## Implementation Constraints
 
@@ -269,5 +281,7 @@ The following GLSL compute shaders are compiled to SPIR-V during the build. Shad
 - `lab_preprocess.comp`
 - `stage0_absdiff.comp`
 - `stage0_score.comp`
+- `reduce_sum.comp`
+- `reduce_abs_deviation.comp`
 
 To facilitate implementation while comparing with the original dssim algorithm, the source code of the original implementation is retained in `src_reference/`.

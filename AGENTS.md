@@ -10,8 +10,9 @@
 - `dssim_vulkan` always links the minimal FFmpeg Vulkan Video build under
   `third_party/ffmpeg-gpu-shared`, including for PNG-only work. If it is absent,
   create it with `& .\tools\build_ffmpeg_minimal.ps1 -Variant Gpu` before configuring.
-- Keep the vendored upstream source in `third_party/ffmpeg-8.1.2` unmodified.
-  Apply the AMD AV1 compatibility patch only to the GPU build's private source copy.
+- Keep the pristine upstream source tree, expanded as needed from the tracked
+  `third_party/ffmpeg-8.1.2.tar.xz` archive, unmodified. Apply the AMD AV1
+  compatibility patch only to the GPU build's private source copy.
 - Reference uses separate, unpatched D3D11VA FFmpeg DLLs in
   `third_party/ffmpeg-reference-shared`; build with `& .\tools\build_reference.ps1`.
 - Both FFmpeg variants must use dynamic linking. Copy each variant's DLLs next
@@ -29,10 +30,12 @@
    `src_reference\target\release\dssim.exe`:
    - `& .\tools\check_regression.ps1`
 
-The fixed regression list currently covers PNG comparisons. Changes to video
-decoding, Vulkan YUV conversion, frame scheduling, or video output also require
-the video verification workflow below; video checks do not replace the PNG
-regression check.
+The fixed regression list currently contains 10 PNG pairs and 6 video pairs.
+It is the baseline mechanical score comparison for all supported input types.
+Changes to video decoding, Vulkan YUV conversion, frame scheduling, or video
+output also require the dedicated video verification workflow below, including
+CSV and pipeline-depth checks; those checks supplement rather than replace the
+fixed regression list.
 
 ## Video support and verification
 
@@ -67,7 +70,9 @@ reference executable or a reproducibly generated same-input result.
 
 ## Current priority: Performance optimization
 
-- Score-matching is done. All test pairs in `tests/test_pairs.txt` are within 0.2% relative error of the reference.
+- The acceptance criterion is a mechanical comparison of every pair in
+  `tests/test_pairs.txt` against the local reference under the current
+  regression tolerance.
 - Current priority is **reducing end-to-end latency** while keeping scores within the regression tolerance.
 
 ### Regression tolerance
@@ -137,15 +142,17 @@ reference executable or a reproducibly generated same-input result.
   - `gpu_submit_wait_ms`: CPU wall time for dispatch/submit + readback/map wait
   - `cpu_postprocess_ms`: CPU-side score aggregation
   - `other_ms`: uncategorized overhead
+  - `total_ms`: sum of the wall-clock MECE buckets
 - `gpu_timestamp_ms` is the independent GPU execution duration measured with Vulkan
   timestamp queries. It can overlap CPU wall-clock buckets and is not added to the MECE total.
 - When `--out <json>` is specified, finer-grained timing is in the `profiling` object:
-  - `create_shader_module_ms`, `create_pso_ms`, `create_buffer_ms`, `write_input_buffer_ms`, `create_pipeline_layout_ms`, `create_bind_group_ms`, `dispatch_and_submit_ms`, `readback_ms`, `gpu_submit_wait_ms`, `gpu_timestamp_ms`, `post_process_base_scale_ms`, `post_process_remaining_scales_ms`, `post_process_ms`
+  - `create_shader_module_ms`, `create_pso_ms`, `create_buffer_ms`, `write_input_buffer_ms`, `create_pipeline_layout_ms`, `create_bind_group_ms`, `dispatch_and_submit_ms`, `readback_ms`, `gpu_submit_wait_ms`, `gpu_timestamp_ms`, `decode_done_to_score_ms`, `post_process_base_scale_ms`, `post_process_remaining_scales_ms`, `post_process_ms`, `other_ms`
 - `dispatch_and_submit_ms` is CPU-side Vulkan command encoding/submission cost, not pure shader execution time.
 - `readback_ms` includes waiting for GPU work completion plus readback/map overhead.
 - Video profiling prefixes aggregate comparison buckets with `video_`; these are
   sums across decoded frame pairs, while the reported video score is their
-  arithmetic mean.
+  arithmetic mean. In particular, `video_total_ms` is the sum of per-frame
+  decode-ready-to-score intervals, not whole-video elapsed time.
 
 ## GPU dispatch constraints
 
