@@ -363,9 +363,7 @@ $HardwareArguments = if ($Variant -eq 'Gpu') {
       '--enable-hwaccel=h264_vulkan,hevc_vulkan,av1_vulkan,vp9_vulkan',
       "--extra-cflags=-I$VulkanIncludeBashPath")
 } else {
-    # Both D3D11VA switch forms are required for FFmpeg's shared dxva2 objects.
-    @('--disable-vulkan', '--enable-d3d11va',
-      '--enable-hwaccel=h264_d3d11va,hevc_d3d11va,av1_d3d11va,vp9_d3d11va,h264_d3d11va2,hevc_d3d11va2,av1_d3d11va2,vp9_d3d11va2')
+    @('--disable-vulkan', '--disable-d3d11va', '--disable-dxva2')
 }
 $Parallelism = [Math]::Max(1, [Environment]::ProcessorCount)
 $LinkageArguments = @('--enable-shared', '--disable-static')
@@ -439,7 +437,8 @@ if ($Linkage -eq 'Dynamic') {
     }
 }
 
-Set-Content -LiteralPath $MarkerPath -Value "$VariantName-shared-v1" -Encoding ascii
+$VariantMarker = if ($Variant -eq 'Reference') { 'reference-cpu-shared-v2' } else { 'gpu-shared-v1' }
+Set-Content -LiteralPath $MarkerPath -Value $VariantMarker -Encoding ascii
 Write-Host "Minimal $Variant $Linkage FFmpeg installed at $Prefix"
 Write-Host 'Configure and build the Vulkan GPU executable with:'
 Write-Host '  & cmake -S . -B build'

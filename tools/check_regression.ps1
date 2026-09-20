@@ -120,7 +120,9 @@ $referencePath = Join-Path $repositoryRoot "src_reference\target\release\dssim.e
 # Always refresh the reference executable and its app-local DLLs, including when
 # an older reference executable already exists.
 $referenceMarker = Join-Path $repositoryRoot 'third_party\ffmpeg-reference-shared\dssim-ffmpeg-variant.txt'
-& (Join-Path $PSScriptRoot 'build_reference.ps1') -SkipFfmpegBuild:(Test-Path -LiteralPath $referenceMarker)
+$referenceReady = (Test-Path -LiteralPath $referenceMarker) -and
+    (Get-Content -LiteralPath $referenceMarker -Raw).Trim() -eq 'reference-cpu-shared-v2'
+& (Join-Path $PSScriptRoot 'build_reference.ps1') -SkipFfmpegBuild:$referenceReady
 $referencePath = Resolve-ExistingPath $referencePath
 
 $pairs = @()

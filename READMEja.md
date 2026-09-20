@@ -54,7 +54,7 @@ or
 上記の CMake 手動ビルド前には `& .\tools\build_ffmpeg_minimal.ps1 -Variant Gpu` を実行してください。
 
 reference は `& .\tools\build_reference.ps1` でビルドします。パッチを適用せず、
-D3D11VA を有効、Vulkan を無効にした DLL を `third_party/ffmpeg-reference-shared` に生成します。
+ハードウェア支援、D3D11VA、DXVA2、Vulkan を無効にした CPU デコード用 DLL を `third_party/ffmpeg-reference-shared` に生成します。H.264・HEVC・VP9 は FFmpeg のソフトウェアデコーダー、AV1 は libdav1d を使用します。
 両者とも動的リンクし、それぞれの実行ファイル横に専用 DLL を配置します。共通 PATH や
 バイナリ ZIP は使用しません。FFmpeg のビルドには Visual Studio x64 C++ ツール、
 MSYS2 の make/diffutils、GPU 用には Vulkan SDK が必要です。libdav1d/libjxl/pkgconf は vcpkg から取得します。

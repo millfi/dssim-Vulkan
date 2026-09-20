@@ -23,7 +23,7 @@ fn main() {
             std::fs::read_to_string(marker)
                 .expect("Missing FFmpeg build marker")
                 .trim(),
-            "reference-shared-v1",
+            "reference-cpu-shared-v2",
             "Wrong FFmpeg variant for reference"
         );
         // OUT_DIR is <target>/<profile>/build/<package>/out. Keep DLLs app-local
@@ -39,10 +39,9 @@ fn main() {
         }
         // ffmpeg-sys-next discovers prebuilt FFmpeg through FFMPEG_DIR, but
         // does not propagate the Windows system libraries required by our
-        // D3D11VA-enabled FFmpeg distribution.
+        // CPU FFmpeg distribution.
         for library in [
-            "advapi32", "bcrypt", "d3d11", "dxgi", "ole32", "secur32", "shell32", "user32",
-            "ws2_32",
+            "advapi32", "bcrypt", "ole32", "secur32", "shell32", "user32", "ws2_32",
         ] {
             println!("cargo:rustc-link-lib={library}");
         }

@@ -51,7 +51,7 @@ or
 
 `third_party/ffmpeg-8.1.2.tar.xz` contains the unmodified upstream FFmpeg source. `build_gpu.ps1` expands it when needed, applies the AMD AV1 Vulkan Video compatibility patch only to a private GPU source copy, enables Vulkan Video, and installs DLLs in `third_party/ffmpeg-gpu-shared`. For the manual CMake commands above, first run `& .\tools\build_ffmpeg_minimal.ps1 -Variant Gpu`.
 
-Build the reference with `& .\tools\build_reference.ps1`. Its separate, unpatched D3D11VA build installs DLLs in `third_party/ffmpeg-reference-shared` and disables Vulkan. Both variants use dynamic linking and place their own DLLs beside their executable, so they do not depend on a shared FFmpeg `PATH`. Binary ZIP distributions are no longer used. Building FFmpeg requires Visual Studio x64 C++ tools, MSYS2 make/diffutils, and the Vulkan SDK for the GPU variant; vcpkg supplies libdav1d/libjxl/pkgconf.
+Build the reference with `& .\tools\build_reference.ps1`. Its separate, unpatched CPU-decoding build installs DLLs in `third_party/ffmpeg-reference-shared` and disables hardware acceleration, D3D11VA, DXVA2, and Vulkan. H.264, HEVC, and VP9 use native software decoders; AV1 uses libdav1d. Both variants use dynamic linking and place their own DLLs beside their executable, so they do not depend on a shared FFmpeg `PATH`. Binary ZIP distributions are no longer used. Building FFmpeg requires Visual Studio x64 C++ tools, MSYS2 make/diffutils, and the Vulkan SDK for the GPU variant; vcpkg supplies libdav1d/libjxl/pkgconf.
 
 
 The executable is generated at the following location:

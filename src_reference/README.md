@@ -60,9 +60,11 @@ You'll need [Rust 1.72](https://rustup.rs) or later. Clone the repo and run:
 
 Will give you `./target/release/dssim`.
 
-### Windows video comparison (D3D11VA only)
+### Windows video comparison (CPU decoding)
 
-The optional `video` feature compares corresponding frames in two MP4/M4V/MOV/MKV/WebM files and prints their arithmetic-mean DSSIM. It accepts only D3D11VA-decoded frames: a missing compatible hardware decoder, driver failure, or a software-decoded frame is an error rather than a fallback.
+The optional `video` feature compares corresponding frames in two MP4/M4V/MOV/MKV/WebM files and prints their arithmetic-mean DSSIM. Decoding runs on the CPU: H.264, HEVC, and VP9 use FFmpeg's native software decoders, and AV1 uses libdav1d. Frames are converted to RGB24 with libswscale on the CPU; no GPU device or hardware decoder is required. Frames are paired by zero-based decode order and must have matching dimensions and frame counts.
+
+For 8-bit and 10-bit planar 4:2:0 frames, the adapter first repacks the decoded samples into NV12 or P010 on the CPU. This retains the previous reference's libswscale RGB conversion and rounding. Cropping is applied without alignment rounding before conversion.
 
 From a Visual Studio Developer PowerShell, install MSYS2 with its `make` and `diffutils` packages. The build helper discovers MSYS2 under `%USERPROFILE%\msys64` or `C:\msys64`; if it is installed elsewhere, pass its location with `-MsysRoot`. Build the stripped shared FFmpeg distribution and then the CLI:
 
@@ -76,7 +78,7 @@ The reference-only FFmpeg DLLs are installed in `third_party\ffmpeg-reference-sh
 & .\src_reference\target\release\dssim.exe original.webm modified.mp4
 ```
 
-The build expands the vendored upstream `third_party/ffmpeg-8.1.2.tar.xz` into `third_party/ffmpeg-8.1.2` when needed and uses that unmodified FFmpeg 8.1.2 source. D3D11VA is enabled and Vulkan is disabled. The AMD AV1 patch used by the GPU variant is never applied to this build. Both variants link FFmpeg dynamically; static builds are not supported. To rebuild just these DLLs, run `& .\tools\build_ffmpeg_minimal.ps1 -Variant Reference`, then `& .\tools\build_reference.ps1 -SkipFfmpegBuild` to relink and refresh the app-local DLLs.
+The build expands the vendored upstream `third_party/ffmpeg-8.1.2.tar.xz` into `third_party/ffmpeg-8.1.2` when needed and uses that unmodified FFmpeg 8.1.2 source. Hardware acceleration, D3D11VA, DXVA2, and Vulkan are disabled for the reference. The AMD AV1 patch used by the GPU variant is never applied to this build. Both variants link FFmpeg dynamically; static builds are not supported. To rebuild just these DLLs, run `& .\tools\build_ffmpeg_minimal.ps1 -Variant Reference`, then `& .\tools\build_reference.ps1 -SkipFfmpegBuild` to relink and refresh the app-local DLLs. Older D3D11VA DLLs must be rebuilt; `tools/check_regression.ps1` detects their obsolete build marker and rebuilds them automatically.
 
 ## Accuracy
 

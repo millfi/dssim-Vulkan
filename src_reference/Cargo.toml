@@ -42,7 +42,7 @@ webp-static = ["load_image/webp-static"]
 mozjpeg = ["load_image/mozjpeg"]
 no-macos-vimage = ["dssim-core/no-macos-vimage"]
 # Video comparison is opt-in because it links against the locally built,
-# hardware-only FFmpeg distribution produced by tools/build_ffmpeg_minimal.ps1.
+# CPU-decoding FFmpeg distribution produced by tools/build_ffmpeg_minimal.ps1.
 video = ["dep:ffmpeg-next"]
 
 [package.metadata.release]

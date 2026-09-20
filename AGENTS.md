@@ -13,7 +13,7 @@
 - Keep the pristine upstream source tree, expanded as needed from the tracked
   `third_party/ffmpeg-8.1.2.tar.xz` archive, unmodified. Apply the AMD AV1
   compatibility patch only to the GPU build's private source copy.
-- Reference uses separate, unpatched D3D11VA FFmpeg DLLs in
+- Reference uses separate, unpatched CPU-decoding FFmpeg DLLs in
   `third_party/ffmpeg-reference-shared`; build with `& .\tools\build_reference.ps1`.
 - Both FFmpeg variants must use dynamic linking. Copy each variant's DLLs next
   to its own executable; never share a runtime DLL directory or ship a binary ZIP.

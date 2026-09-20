@@ -12,8 +12,9 @@ needed; that expanded tree remains unmodified.
 and builds Vulkan Video DLLs in `ffmpeg-gpu-shared` (D3D11VA disabled).
 
 `-Variant Reference` copies the same pristine source into
-`ffmpeg-build/reference/source` without that patch and builds D3D11VA DLLs in
-`ffmpeg-reference-shared` (Vulkan disabled). Both variants disable static FFmpeg
+`ffmpeg-build/reference/source` without that patch and builds CPU-decoding DLLs in
+`ffmpeg-reference-shared` (hardware acceleration, D3D11VA, DXVA2, and Vulkan disabled).
+AV1 software decoding uses libdav1d. Both variants disable static FFmpeg
 libraries. Generated source copies, object files, and installed DLLs are ignored.
 
 Never interchange the two sets of DLLs, even though their filenames match.

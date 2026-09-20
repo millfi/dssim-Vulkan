@@ -8,8 +8,8 @@ if (-not $SkipFfmpegBuild) {
 }
 $Marker = Join-Path $FfmpegRoot 'dssim-ffmpeg-variant.txt'
 if (-not (Test-Path -LiteralPath $Marker) -or
-    (Get-Content -LiteralPath $Marker -Raw).Trim() -ne 'reference-shared-v1') {
-    throw 'Build the unpatched Reference FFmpeg DLLs first.'
+    (Get-Content -LiteralPath $Marker -Raw).Trim() -ne 'reference-cpu-shared-v2') {
+    throw 'Build the unpatched CPU Reference FFmpeg DLLs first with tools/build_reference.ps1.'
 }
 $PreviousFfmpegDir = $env:FFMPEG_DIR
 $PreviousTargetDir = $env:CARGO_TARGET_DIR

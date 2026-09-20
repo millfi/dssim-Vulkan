@@ -1,8 +1,7 @@
-//! Windows video decoding through a D3D11VA-only FFmpeg path.
+//! Video decoding through FFmpeg software decoders.
 //!
 //! The build intentionally contains only the demuxers and decoders selected
-//! in `tools/build_ffmpeg_minimal.ps1`. A decoded frame must be a D3D11 frame;
-//! a CPU decoder result is rejected instead of silently falling back.
+//! in `tools/build_ffmpeg_minimal.ps1`. Decoding and RGB conversion run on the CPU.
 
 use dssim_core::ToRGBAPLU;
 use ffmpeg::ffi;
@@ -11,7 +10,6 @@ use ffmpeg_next as ffmpeg;
 use imgref::Img;
 use std::collections::VecDeque;
 use std::path::Path;
-use std::ptr;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -88,119 +86,24 @@ pub fn compare_video_files(
     })
 }
 
-struct HardwareDevice(*mut ffi::AVBufferRef);
-
-impl HardwareDevice {
-    fn d3d11va() -> Result<Self> {
-        let ty = unsafe { ffi::av_hwdevice_find_type_by_name(b"d3d11va\0".as_ptr().cast()) };
-        if ty == ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_NONE {
-            return Err("This FFmpeg build does not include D3D11VA".into());
-        }
-
-        let mut device = ptr::null_mut();
-        let result = unsafe {
-            ffi::av_hwdevice_ctx_create(&mut device, ty, ptr::null(), ptr::null_mut(), 0)
-        };
-        if result < 0 {
-            return Err(ffmpeg::Error::from(result).into());
-        }
-        Ok(Self(device))
-    }
-
-    fn as_ptr(&self) -> *mut ffi::AVBufferRef {
-        self.0
-    }
-}
-
-impl Drop for HardwareDevice {
-    fn drop(&mut self) {
-        unsafe { ffi::av_buffer_unref(&mut self.0) };
-    }
-}
-
-/// Fail before opening the decoder if the linked `avcodec` does not expose the
-/// D3D11VA2 configuration that backs `AV_PIX_FMT_D3D11`.
-///
-/// Merely seeing `D3D11` in a codec's `get_format` candidates is insufficient:
-/// that list can be present even when the corresponding hwaccel object was
-/// left out of a slim static build.
-fn require_d3d11va2_configuration(codec: &ffmpeg::codec::codec::Codec) -> Result<()> {
-    let mut configurations = Vec::new();
-    let required_method = ffi::AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX as i32;
-
-    for index in 0.. {
-        let configuration = unsafe { ffi::avcodec_get_hw_config(codec.as_ptr(), index) };
-        if configuration.is_null() {
-            break;
-        }
-
-        let configuration = unsafe { &*configuration };
-        let pixel_format = ffmpeg::format::Pixel::from(configuration.pix_fmt);
-        configurations.push(format!(
-            "{pixel_format:?} (methods=0x{:x}, device={:?})",
-            configuration.methods, configuration.device_type
-        ));
-
-        if pixel_format == ffmpeg::format::Pixel::D3D11
-            && configuration.device_type == ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_D3D11VA
-            && configuration.methods & required_method != 0
-        {
-            return Ok(());
-        }
-    }
-
-    Err(format!(
-        "The linked FFmpeg decoder '{}' has no D3D11VA device configuration. Available hardware configurations: {}",
-        codec.name(),
-        if configurations.is_empty() {
-            "none".to_owned()
-        } else {
-            configurations.join(", ")
-        }
-    )
-    .into())
-}
-
-/// Select FFmpeg's native decoder explicitly. `decoder::find(codec_id)` may
-/// return an enabled external decoder such as libdav1d, which cannot expose
-/// the D3D11VA hwaccel configurations attached to FFmpeg's native decoder.
-fn find_d3d11va_decoder(id: ffmpeg::codec::Id) -> Result<ffmpeg::codec::codec::Codec> {
+/// Select software decoders explicitly; AV1 uses libdav1d.
+fn find_software_decoder(id: ffmpeg::codec::Id) -> Result<ffmpeg::codec::codec::Codec> {
     let name = match id {
         ffmpeg::codec::Id::H264 => "h264",
         ffmpeg::codec::Id::HEVC => "hevc",
         ffmpeg::codec::Id::VP9 => "vp9",
-        ffmpeg::codec::Id::AV1 => "av1",
+        ffmpeg::codec::Id::AV1 => "libdav1d",
         _ => return Err(format!("Unsupported video codec: {id:?}").into()),
     };
 
     ffmpeg::codec::decoder::find_by_name(name)
-        .ok_or_else(|| format!("The native FFmpeg decoder '{name}' is not enabled").into())
-}
-
-unsafe extern "C" fn select_d3d11_format(
-    _context: *mut ffi::AVCodecContext,
-    formats: *const ffi::AVPixelFormat,
-) -> ffi::AVPixelFormat {
-    let mut format = formats;
-    while !format.is_null() {
-        let candidate = unsafe { *format };
-        if ffmpeg::format::Pixel::from(candidate) == ffmpeg::format::Pixel::D3D11 {
-            return candidate;
-        }
-        if ffmpeg::format::Pixel::from(candidate) == ffmpeg::format::Pixel::None {
-            break;
-        }
-        format = unsafe { format.add(1) };
-    }
-    ffmpeg::format::Pixel::None.into()
+        .ok_or_else(|| format!("The FFmpeg software decoder '{name}' is not enabled").into())
 }
 
 struct VideoReader {
     input: ffmpeg::format::context::Input,
     decoder: ffmpeg::decoder::Video,
     stream_index: usize,
-    // Keep this alive until after the decoder is dropped.
-    _hardware_device: HardwareDevice,
     frames: VecDeque<ffmpeg::frame::Video>,
     sent_eof: bool,
     decoder_eof: bool,
@@ -214,27 +117,17 @@ impl VideoReader {
             .best(ffmpeg::media::Type::Video)
             .ok_or("No video stream was found")?;
         let stream_index = stream.index();
-        let codec = find_d3d11va_decoder(stream.parameters().id())?;
-        require_d3d11va2_configuration(&codec)?;
-
-        let hardware_device = HardwareDevice::d3d11va()?;
+        let codec = find_software_decoder(stream.parameters().id())?;
         let mut context = ffmpeg::codec::context::Context::from_parameters(stream.parameters())?;
-        unsafe {
-            let raw_context = context.as_mut_ptr();
-            (*raw_context).get_format = Some(select_d3d11_format);
-            (*raw_context).extra_hw_frames = 32;
-            (*raw_context).hw_device_ctx = ffi::av_buffer_ref(hardware_device.as_ptr());
-            if (*raw_context).hw_device_ctx.is_null() {
-                return Err("Failed to attach the D3D11VA device to the decoder".into());
-            }
-        }
+        // Preserve exact crop offsets for software_frame_to_rgb; FFmpeg's
+        // default aligned cropping can round away a small left crop.
+        unsafe { (*context.as_mut_ptr()).apply_cropping = 0 };
 
         let decoder = context.decoder().open_as(codec)?.video()?;
         Ok(Self {
             input,
             decoder,
             stream_index,
-            _hardware_device: hardware_device,
             frames: VecDeque::new(),
             sent_eof: false,
             decoder_eof: false,
@@ -278,7 +171,7 @@ impl VideoReader {
         loop {
             let mut decoded = ffmpeg::frame::Video::empty();
             match self.decoder.receive_frame(&mut decoded) {
-                Ok(()) => self.frames.push_back(copy_d3d11_frame_to_rgb(&decoded)?),
+                Ok(()) => self.frames.push_back(software_frame_to_rgb(&mut decoded)?),
                 Err(ffmpeg::Error::Other { errno }) if errno == EAGAIN => return Ok(()),
                 Err(ffmpeg::Error::Eof) => {
                     self.decoder_eof = true;
@@ -290,30 +183,50 @@ impl VideoReader {
     }
 }
 
-fn copy_d3d11_frame_to_rgb(decoded: &ffmpeg::frame::Video) -> Result<ffmpeg::frame::Video> {
-    if decoded.format() != ffmpeg::format::Pixel::D3D11 {
-        return Err("FFmpeg selected a software decoder; hardware decoding is required".into());
-    }
-
-    let mut system_frame = ffmpeg::frame::Video::empty();
-    let result =
-        unsafe { ffi::av_hwframe_transfer_data(system_frame.as_mut_ptr(), decoded.as_ptr(), 0) };
+fn software_frame_to_rgb(decoded: &mut ffmpeg::frame::Video) -> Result<ffmpeg::frame::Video> {
+    // Convert only the visible frame, including crops not aligned to 32 bytes.
+    // libswscale accepts unaligned input data.
+    let result = unsafe {
+        ffi::av_frame_apply_cropping(decoded.as_mut_ptr(), ffi::AV_FRAME_CROP_UNALIGNED as i32)
+    };
     if result < 0 {
         return Err(ffmpeg::Error::from(result).into());
     }
 
-    let mut rgb_frame = ffmpeg::frame::Video::empty();
+    // Keep the previous reference's RGB conversion path. libswscale uses
+    // different rounding for planar YUV -> RGB than for NV12/P010 -> RGB.
+    // This CPU-only repack preserves the decoded 4:2:0 sample values.
+    let packed_format = match decoded.format() {
+        ffmpeg::format::Pixel::YUV420P => Some(ffmpeg::format::Pixel::NV12),
+        ffmpeg::format::Pixel::YUV420P10LE => Some(ffmpeg::format::Pixel::P010LE),
+        _ => None,
+    };
+    let packed;
+    let source = if let Some(format) = packed_format {
+        packed = convert_software_frame(decoded, format)?;
+        &packed
+    } else {
+        decoded
+    };
+    convert_software_frame(source, ffmpeg::format::Pixel::RGB24)
+}
+
+fn convert_software_frame(
+    source: &ffmpeg::frame::Video,
+    format: ffmpeg::format::Pixel,
+) -> Result<ffmpeg::frame::Video> {
+    let mut output = ffmpeg::frame::Video::empty();
     let mut scaler = ffmpeg::software::scaling::Context::get(
-        system_frame.format(),
-        system_frame.width(),
-        system_frame.height(),
-        ffmpeg::format::Pixel::RGB24,
-        system_frame.width(),
-        system_frame.height(),
+        source.format(),
+        source.width(),
+        source.height(),
+        format,
+        source.width(),
+        source.height(),
         ffmpeg::software::scaling::flag::Flags::BILINEAR,
     )?;
-    scaler.run(&system_frame, &mut rgb_frame)?;
-    Ok(rgb_frame)
+    scaler.run(source, &mut output)?;
+    Ok(output)
 }
 
 fn rgb_frame_to_dssim(
